@@ -1,0 +1,29 @@
+import { Modality } from "@google/genai";
+
+export enum StreamStatus {
+  OFFLINE = 'OFFLINE',
+  LIVE = 'LIVE',
+  ENDED = 'ENDED'
+}
+
+export interface ChatMessage {
+  id: string;
+  sender: string; // Name of the user
+  text: string;
+  timestamp: number; // Unix timestamp for Firebase compatibility
+  type?: 'text' | 'reaction'; // Discriminate regular messages from reactions like confetti
+  isMe?: boolean; // Helper for UI rendering (local only)
+}
+
+export interface Graduate {
+  id: string;
+  name: string;
+  course: string;
+  imageUrl: string;
+}
+
+// Helper types for Audio processing
+export interface AudioQueueItem {
+  buffer: AudioBuffer;
+  duration: number;
+}
