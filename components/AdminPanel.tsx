@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Radio, StopCircle, RefreshCcw, Settings, AlertTriangle, Wifi, WifiOff, Globe, Lock, Copy, ExternalLink, Check, Clock, UserPlus, Trash2, Image as ImageIcon, GraduationCap, MessageSquare, Maximize, Minimize } from 'lucide-react';
+import { Radio, StopCircle, RefreshCcw, Settings, AlertTriangle, Wifi, WifiOff, Globe, Lock, Copy, ExternalLink, Check, Clock, UserPlus, Trash2, Image as ImageIcon, GraduationCap, MessageSquare, Maximize, Minimize, Camera, ZoomIn, ZoomOut } from 'lucide-react';
 import { StreamStatus, Graduate, ChatMessage } from '../types';
 import { checkFirebaseConnection, listenForViewers, sendOffer, listenForAnswer, sendIceCandidate, listenForIceCandidates, setStreamCountdown, listenToCountdown, listenToGraduates, addGraduate, removeGraduate, listenToChatMessages, deleteChatMessage } from '../services/firebase';
 
@@ -25,6 +25,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUpdate, currentStatus }) => {
   const [copied, setCopied] = useState(false);
   const [viewerCount, setViewerCount] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  
+  // Zoom State
+  const [zoomLevel, setZoomLevel] = useState<number>(1);
+  const [zoomCapabilities, setZoomCapabilities] = useState<{min: number, max: number, step: number} | null>(null);
   
   // Countdown State
   const [countdownMinutes, setCountdownMinutes] = useState<string>('20');
@@ -78,14 +82,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUpdate, currentStatus }) => {
   }, []);
 
   useEffect(() => {
-    let mounted = true;
-    const init = async () => {
-      await startCamera();
-    };
-    init();
+    // Se mudarmos a câmera (facingMode) e o stream já estiver ativo, reinicia a câmera automaticamente.
+    // Mas NÃO inicia no primeiro carregamento (espera ação do usuário).
+    if (stream && hasPermission) {
+        startCamera();
+    }
+    
     return () => {
-      mounted = false;
-      stopCameraInternal();
+      // Cleanup apenas se o componente desmontar
     };
   }, [facingMode]);
 
@@ -94,6 +98,30 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUpdate, currentStatus }) => {
       videoRef.current.srcObject = stream;
     }
   }, [stream, hasPermission]);
+
+  // --- Zoom Capability Check ---
+  useEffect(() => {
+    if (stream) {
+        const track = stream.getVideoTracks()[0];
+        if (track) {
+            const capabilities = track.getCapabilities() as any; // Cast to any because zoom is bleeding edge/browser specific
+            const settings = track.getSettings() as any;
+            
+            if ('zoom' in capabilities) {
+                setZoomCapabilities({
+                    min: capabilities.zoom.min,
+                    max: capabilities.zoom.max,
+                    step: capabilities.zoom.step
+                });
+                setZoomLevel(settings.zoom || capabilities.zoom.min);
+            } else {
+                setZoomCapabilities(null);
+            }
+        }
+    } else {
+        setZoomCapabilities(null);
+    }
+  }, [stream]);
 
   // --- WebRTC Logic ---
   useEffect(() => {
@@ -163,17 +191,47 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUpdate, currentStatus }) => {
     setErrorMsg('');
     try {
       let newStream: MediaStream | null = null;
-      const constraints = { video: { facingMode: facingMode }, audio: true };
+      
+      // CONFIGURAÇÃO DE ALTA DEFINIÇÃO (4K)
+      const constraints = { 
+          video: { 
+              facingMode: facingMode,
+              // Tenta 4K (3840x2160). Se não der, o navegador pega a melhor disponível.
+              width: { ideal: 3840 },
+              height: { ideal: 2160 },
+              // Tenta 30fps ou 60fps para fluidez
+              frameRate: { ideal: 30, max: 60 },
+              zoom: true 
+          } as any, 
+          audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+          }
+      };
 
       try {
         newStream = await navigator.mediaDevices.getUserMedia(constraints);
       } catch (firstErr: any) {
-        if (firstErr.name === 'NotReadableError' || firstErr.message?.includes('video source')) {
-            await new Promise(resolve => setTimeout(resolve, 500));
+        if (firstErr.name === 'NotReadableError' || firstErr.message?.includes('video source') || firstErr.name === 'OverconstrainedError') {
+            console.warn("4K falhou, tentando Full HD...", firstErr);
+            // Fallback para Full HD se 4K falhar
+            try {
+                 newStream = await navigator.mediaDevices.getUserMedia({ 
+                     video: { 
+                         facingMode: facingMode, 
+                         width: { ideal: 1920 }, 
+                         height: { ideal: 1080 } 
+                     }, 
+                     audio: true 
+                 });
+            } catch (secondErr) {
+                 // Fallback final genérico
+                 newStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            }
+        } else {
+            throw firstErr;
         }
-        try {
-            newStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        } catch (secondErr) { throw secondErr; }
       }
       
       if (newStream) {
@@ -182,6 +240,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUpdate, currentStatus }) => {
         setHasPermission(true);
       }
     } catch (err: any) {
+      console.error(err);
       setHasPermission(false);
       setStream(null);
       setErrorMsg("Erro ao acessar câmera. Verifique permissões.");
@@ -190,6 +249,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUpdate, currentStatus }) => {
 
   const toggleCamera = () => {
     setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
+  };
+
+  const handleZoomChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const newZoom = parseFloat(e.target.value);
+      setZoomLevel(newZoom);
+      
+      if (streamRef.current) {
+          const track = streamRef.current.getVideoTracks()[0];
+          if (track) {
+              const constraints = { advanced: [{ zoom: newZoom }] } as any;
+              track.applyConstraints(constraints).catch(e => console.error("Falha ao aplicar zoom:", e));
+          }
+      }
   };
 
   const handleStartStream = () => {
@@ -403,16 +475,38 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUpdate, currentStatus }) => {
             ref={containerRef}
             className="aspect-video bg-black relative group flex items-center justify-center overflow-hidden"
           >
-              {hasPermission === false ? (
-                  <div className="text-center text-red-500 p-6 flex flex-col items-center max-w-md">
-                      <AlertTriangle size={32} className="mb-4" />
-                      <h3 className="text-white font-bold mb-2">Erro de Câmera</h3>
-                      <p className="text-sm text-zinc-400 mb-6">{errorMsg}</p>
-                      <button onClick={() => startCamera()} className="px-6 py-2 bg-zinc-800 rounded-full text-white text-sm font-bold border border-zinc-700">
-                        Tentar Novamente
-                      </button>
+              {/* Camera Activation State (Default State) */}
+              {!stream && (
+                  <div className="text-center p-6 flex flex-col items-center max-w-md z-10">
+                      {hasPermission === false ? (
+                        <>
+                            <AlertTriangle size={32} className="mb-4 text-red-500" />
+                            <h3 className="text-white font-bold mb-2">Acesso Negado</h3>
+                            <p className="text-sm text-zinc-400 mb-6">{errorMsg}</p>
+                            <button onClick={() => startCamera()} className="px-6 py-2 bg-zinc-800 rounded-full text-white text-sm font-bold border border-zinc-700 hover:bg-zinc-700 transition-colors">
+                                Tentar Novamente
+                            </button>
+                        </>
+                      ) : (
+                        <>
+                            <div className="w-16 h-16 bg-zinc-800/50 rounded-full flex items-center justify-center mb-4 border border-zinc-700">
+                                <Camera size={32} className="text-gold-500" />
+                            </div>
+                            <h3 className="text-white font-bold mb-2">Câmera Desativada</h3>
+                            <p className="text-sm text-zinc-400 mb-6">Ative a câmera para visualizar o cenário antes de iniciar a transmissão.</p>
+                            <button 
+                                onClick={() => startCamera()} 
+                                className="px-8 py-3 bg-gold-600 hover:bg-gold-500 text-black rounded-full text-sm font-bold shadow-lg transition-transform active:scale-95 flex items-center gap-2"
+                            >
+                                <Camera size={18} />
+                                ATIVAR CÂMERA
+                            </button>
+                        </>
+                      )}
                   </div>
-              ) : (
+              )}
+
+              {stream && (
                 <>
                     <video 
                         ref={videoRef}
@@ -439,21 +533,41 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUpdate, currentStatus }) => {
                        Espectadores Conectados: {viewerCount}
                     </div>
 
-                    <div className="absolute bottom-6 right-6 z-30 flex gap-2">
-                         <button 
-                            onClick={toggleCamera} 
-                            className="p-3 bg-black/50 hover:bg-black/80 text-white rounded-full backdrop-blur-md border border-white/10"
-                            title="Inverter Câmera"
-                         >
-                            <RefreshCcw size={20} />
-                         </button>
-                         <button 
-                            onClick={toggleFullScreen}
-                            className="p-3 bg-black/50 hover:bg-black/80 text-white rounded-full backdrop-blur-md border border-white/10"
-                            title="Tela Cheia"
-                        >
-                            {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
-                        </button>
+                    {/* Bottom Controls */}
+                    <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/80 to-transparent flex flex-col gap-3 z-30">
+                        {/* Zoom Slider (Only if supported) */}
+                        {zoomCapabilities && (
+                            <div className="flex items-center gap-3 w-full max-w-xs mx-auto bg-black/40 backdrop-blur-md p-2 rounded-full border border-white/10">
+                                <ZoomOut size={16} className="text-zinc-400" />
+                                <input 
+                                    type="range"
+                                    min={zoomCapabilities.min}
+                                    max={zoomCapabilities.max}
+                                    step={zoomCapabilities.step}
+                                    value={zoomLevel}
+                                    onChange={handleZoomChange}
+                                    className="flex-1 accent-gold-500"
+                                />
+                                <ZoomIn size={16} className="text-zinc-400" />
+                            </div>
+                        )}
+
+                        <div className="flex justify-end gap-2">
+                             <button 
+                                onClick={toggleCamera} 
+                                className="p-3 bg-black/50 hover:bg-black/80 text-white rounded-full backdrop-blur-md border border-white/10"
+                                title="Inverter Câmera"
+                             >
+                                <RefreshCcw size={20} />
+                             </button>
+                             <button 
+                                onClick={toggleFullScreen}
+                                className="p-3 bg-black/50 hover:bg-black/80 text-white rounded-full backdrop-blur-md border border-white/10"
+                                title="Tela Cheia"
+                            >
+                                {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
+                            </button>
+                        </div>
                     </div>
                 </>
               )}
@@ -503,7 +617,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUpdate, currentStatus }) => {
                 <button 
                   onClick={handleStartStream}
                   disabled={!stream || !hasPermission}
-                  className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 text-white px-12 py-4 rounded-lg font-bold tracking-wide shadow-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 text-white px-12 py-4 rounded-lg font-bold tracking-wide shadow-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:grayscale"
                 >
                   <Radio size={20} />
                   INICIAR TRANSMISSÃO

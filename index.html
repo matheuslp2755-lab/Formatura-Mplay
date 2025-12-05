@@ -30,6 +30,9 @@
       body {
         background-color: #050505;
         color: #e5e5e5;
+        /* Fix mobile scrolling issues */
+        overflow-x: hidden;
+        min-height: 100vh;
       }
       .loading-spinner {
         border: 4px solid rgba(234, 179, 8, 0.1);
@@ -57,6 +60,28 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #3f3f46;
       }
+      
+      /* Range Slider Styling for Zoom */
+      input[type=range] {
+        -webkit-appearance: none;
+        background: transparent;
+      }
+      input[type=range]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        height: 16px;
+        width: 16px;
+        border-radius: 50%;
+        background: #EAB308;
+        cursor: pointer;
+        margin-top: -6px;
+      }
+      input[type=range]::-webkit-slider-runnable-track {
+        width: 100%;
+        height: 4px;
+        cursor: pointer;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 2px;
+      }
     </style>
   <script type="importmap">
 {
@@ -77,10 +102,12 @@
 </script>
 </head>
   <body>
-    <div id="root" class="h-screen w-full flex items-center justify-center">
-      <div class="flex flex-col items-center gap-4">
-        <div class="loading-spinner"></div>
-        <p class="text-gold-500 font-serif tracking-widest text-sm animate-pulse">CARREGANDO MPLAY...</p>
+    <div id="root">
+      <div class="h-screen w-full flex items-center justify-center">
+        <div class="flex flex-col items-center gap-4">
+          <div class="loading-spinner"></div>
+          <p class="text-gold-500 font-serif tracking-widest text-sm animate-pulse">CARREGANDO MPLAY...</p>
+        </div>
       </div>
     </div>
     <script type="module" src="/index.tsx"></script>
