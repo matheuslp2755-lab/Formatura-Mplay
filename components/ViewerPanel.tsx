@@ -364,7 +364,7 @@ const ViewerPanel: React.FC<ViewerPanelProps> = ({ status }) => {
       <div className="flex-1 flex flex-col gap-4">
         <div 
             ref={containerRef} 
-            className="sticky top-20 lg:top-[4.5rem] z-30 relative aspect-video bg-black rounded-xl overflow-hidden shadow-[0_0_40px_rgba(234,179,8,0.1)] group border border-zinc-800"
+            className="relative aspect-video bg-black rounded-xl overflow-hidden shadow-[0_0_40px_rgba(234,179,8,0.1)] group border border-zinc-800"
         >
             
             {/* Broadcast Overlay / Watermark */}
