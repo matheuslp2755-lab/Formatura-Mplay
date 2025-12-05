@@ -190,9 +190,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUpdate, currentStatus }) => {
     stopCameraInternal();
     setErrorMsg('');
     try {
+      // --- PASSO 1: Solicitar permissão básica ---
+      // Muitos navegadores bloqueiam solicitações com constraints complexas (4K) antes da permissão.
+      // Pedimos o básico primeiro para garantir que o pop-up apareça.
+      const initialStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      
+      // Se chegamos aqui, a permissão foi dada! Paramos o stream básico imediatamente.
+      initialStream.getTracks().forEach(track => track.stop());
+
+      // --- PASSO 2: Solicitar o stream de Alta Qualidade (4K) ---
       let newStream: MediaStream | null = null;
       
-      // CONFIGURAÇÃO DE ALTA DEFINIÇÃO (4K)
       const constraints = { 
           video: { 
               facingMode: facingMode,
@@ -238,12 +246,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUpdate, currentStatus }) => {
         streamRef.current = newStream;
         setStream(newStream);
         setHasPermission(true);
+        return true; // Retorna sucesso
       }
     } catch (err: any) {
       console.error(err);
       setHasPermission(false);
       setStream(null);
-      setErrorMsg("Erro ao acessar câmera. Verifique permissões.");
+      setErrorMsg("Permissão de câmera negada. Verifique as configurações do navegador.");
+      return false; // Retorna falha
     }
   };
 
@@ -264,11 +274,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUpdate, currentStatus }) => {
       }
   };
 
-  const handleStartStream = () => {
+  const handleStartStream = async () => {
+    // Se a câmera já estiver ok
     if (hasPermission && stream) {
-        // Se iniciar a live, limpa a contagem regressiva
         setStreamCountdown(null);
         onUpdate(StreamStatus.LIVE);
+        return;
+    }
+
+    // Se a câmera NÃO estiver ativa, tenta ativar primeiro
+    const success = await startCamera();
+    if (success) {
+        // Aguarda um pouco para o stream estabilizar e inicia
+        setTimeout(() => {
+            setStreamCountdown(null);
+            onUpdate(StreamStatus.LIVE);
+        }, 500);
     }
   };
 
@@ -616,7 +637,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUpdate, currentStatus }) => {
              {currentStatus !== StreamStatus.LIVE ? (
                 <button 
                   onClick={handleStartStream}
-                  disabled={!stream || !hasPermission}
+                  disabled={!stream && hasPermission === false} // Só desabilita se permissão foi explicitamente negada
                   className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 text-white px-12 py-4 rounded-lg font-bold tracking-wide shadow-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:grayscale"
                 >
                   <Radio size={20} />
