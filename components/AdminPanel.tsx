@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Radio, StopCircle, RefreshCcw, Settings, AlertTriangle, Wifi, WifiOff, Globe, Lock, Copy, ExternalLink, Check, Clock, UserPlus, Trash2, Image as ImageIcon, GraduationCap, MessageSquare, Maximize, Minimize, Camera, ZoomIn, ZoomOut } from 'lucide-react';
 import { StreamStatus, Graduate, ChatMessage } from '../types';
-import { checkFirebaseConnection, listenForViewers, sendOffer, listenForAnswer, sendIceCandidate, listenForIceCandidates, setStreamCountdown, listenToCountdown, listenToGraduates, addGraduate, removeGraduate, listenToChatMessages, deleteChatMessage } from '../services/firebase';
+import { checkFirebaseConnection, listenForViewers, sendOffer, listenForAnswer, sendIceCandidate, listenForIceCandidates, setStreamCountdown, listenToCountdown, listenToGraduates, addGraduate, removeGraduate, listenToChatMessages, deleteChatMessage, listenToViewerCount } from '../services/firebase';
 
 interface AdminPanelProps {
   onUpdate: (status: StreamStatus) => void;
@@ -81,6 +81,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUpdate, currentStatus }) => {
     return () => unsubscribe();
   }, []);
 
+  // Listen to Database Viewer Count (More accurate than local RTC connections)
+  useEffect(() => {
+    const unsubscribe = listenToViewerCount((count) => {
+        setViewerCount(count);
+    });
+    return () => unsubscribe();
+  }, []);
+
   useEffect(() => {
     // Se mudarmos a câmera (facingMode) e o stream já estiver ativo, reinicia a câmera automaticamente.
     // Mas NÃO inicia no primeiro carregamento (espera ação do usuário).
@@ -129,8 +137,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUpdate, currentStatus }) => {
       console.log("Iniciando servidor de sinalização...");
       
       const unsubscribe = listenForViewers(async (viewerId) => {
-        console.log("Novo visualizador detectado:", viewerId);
-        setViewerCount(prev => prev + 1);
+        console.log("Novo visualizador (WebRTC handshake):", viewerId);
+        // Note: We don't increment viewerCount here anymore, we use the DB listener for accuracy.
         
         if (peerConnections.current.has(viewerId)) return;
 
@@ -171,7 +179,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUpdate, currentStatus }) => {
         // Cleanup all connections when stopping stream
         peerConnections.current.forEach(pc => pc.close());
         peerConnections.current.clear();
-        setViewerCount(0);
+        // setViewerCount(0); // Managed by DB listener
       };
     }
   }, [currentStatus, stream]);
@@ -297,7 +305,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onUpdate, currentStatus }) => {
     onUpdate(StreamStatus.ENDED);
     peerConnections.current.forEach(pc => pc.close());
     peerConnections.current.clear();
-    setViewerCount(0);
+    // setViewerCount(0);
   };
 
   const copyRulesToClipboard = () => {

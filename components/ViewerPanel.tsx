@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Volume2, VolumeX, Maximize, MessageCircle, Send, Users, Heart, Signal, Video, Loader2, Clock, User, Minimize, GraduationCap, ImageOff, Trash2, PartyPopper } from 'lucide-react';
+import { Volume2, VolumeX, Maximize, MessageCircle, Send, Users, Heart, Signal, Video, Loader2, Clock, User, Minimize, GraduationCap, ImageOff, Trash2, PartyPopper, Eye } from 'lucide-react';
 import { StreamStatus, ChatMessage, Graduate } from '../types';
-import { registerViewer, listenForOffer, sendAnswer, listenForIceCandidates, sendIceCandidate, listenToCountdown, sendChatMessage, listenToChatMessages, listenToGraduates, deleteChatMessage } from '../services/firebase';
+import { registerViewer, listenForOffer, sendAnswer, listenForIceCandidates, sendIceCandidate, listenToCountdown, sendChatMessage, listenToChatMessages, listenToGraduates, deleteChatMessage, listenToViewerCount } from '../services/firebase';
 // @ts-ignore
 import confetti from 'canvas-confetti';
 
@@ -39,6 +39,7 @@ const ViewerPanel: React.FC<ViewerPanelProps> = ({ status }) => {
   const [muted, setMuted] = useState(true); 
   const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'failed'>('disconnected');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [viewerCount, setViewerCount] = useState(0);
 
   // Countdown State
   const [targetTime, setTargetTime] = useState<number | null>(null);
@@ -54,6 +55,14 @@ const ViewerPanel: React.FC<ViewerPanelProps> = ({ status }) => {
     // Agora o listener retorna a lista completa atualizada
     const unsubscribe = listenToChatMessages((msgs) => {
        setMessages(msgs);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Listen to Viewer Count
+  useEffect(() => {
+    const unsubscribe = listenToViewerCount((count) => {
+        setViewerCount(count);
     });
     return () => unsubscribe();
   }, []);
@@ -403,9 +412,15 @@ const ViewerPanel: React.FC<ViewerPanelProps> = ({ status }) => {
                   )}
 
                   {/* LIVE Indicator Overlay */}
-                  <div className="absolute top-6 right-6 z-20 flex items-center gap-2 bg-red-600/90 backdrop-blur-sm text-white px-3 py-1 rounded-sm shadow-lg animate-pulse pointer-events-none">
-                     <Signal size={14} />
-                     <span className="text-xs font-bold tracking-widest uppercase">AO VIVO</span>
+                  <div className="absolute top-6 right-6 z-20 flex flex-col items-end gap-2">
+                      <div className="flex items-center gap-2 bg-red-600/90 backdrop-blur-sm text-white px-3 py-1 rounded-sm shadow-lg animate-pulse pointer-events-none">
+                        <Signal size={14} />
+                        <span className="text-xs font-bold tracking-widest uppercase">AO VIVO</span>
+                      </div>
+                      <div className="flex items-center gap-2 bg-black/60 backdrop-blur-sm text-white px-3 py-1 rounded-sm shadow-lg border border-white/10">
+                         <Eye size={14} className="text-gold-500" />
+                         <span className="text-xs font-mono font-bold">{viewerCount} assistindo</span>
+                      </div>
                   </div>
 
                   {/* Player Controls (Custom) */}

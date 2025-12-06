@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getDatabase, ref, onValue, set, push, onChildAdded, remove, child, get, serverTimestamp } from "firebase/database";
+import { getDatabase, ref, onValue, set, push, onChildAdded, remove, child, get, serverTimestamp, onDisconnect } from "firebase/database";
 import { getAuth, signInAnonymously } from "firebase/auth";
 import { StreamStatus, ChatMessage, Graduate } from "../types";
 
@@ -200,12 +200,32 @@ export const removeGraduate = async (id: string) => {
 };
 
 
-// --- WEBRTC SIGNALING ---
+// --- WEBRTC SIGNALING & PRESENCE ---
 
 export const registerViewer = async (viewerId: string) => {
   if (!db) return;
   const viewerRef = ref(db, `stream/viewers/${viewerId}`);
+  
+  // Remove o usuário do banco de dados se ele desconectar (fechar aba, cair net)
+  await onDisconnect(viewerRef).remove();
+  
+  // Registra o usuário
   await set(viewerRef, { joined: Date.now() });
+};
+
+// Nova função para contar o número exato de espectadores
+export const listenToViewerCount = (callback: (count: number) => void) => {
+  if (!db) return () => {};
+  const viewersRef = ref(db, 'stream/viewers');
+  
+  return onValue(viewersRef, (snapshot) => {
+    if (snapshot.exists()) {
+      const count = Object.keys(snapshot.val()).length;
+      callback(count);
+    } else {
+      callback(0);
+    }
+  });
 };
 
 export const listenForViewers = (onNewViewer: (viewerId: string) => void) => {
